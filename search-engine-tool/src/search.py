@@ -30,6 +30,8 @@ class SearchEngine:
             inv_index: InvertedIndex object to search
         """
         self.inv_index = inv_index
+        # Simple in-memory cache for query -> ranked results
+        self._cache: Dict[Tuple[str, int], List[Tuple[int, float]]] = {}
     
     def print_index(self, word: str) -> Dict:
         """
@@ -146,11 +148,79 @@ class SearchEngine:
         
         if not words:
             return []
-        
-        if len(words) == 1:
-            return self.find_single_word(words[0])
+
+        # Use TF-IDF ranking for results
+        ranked_urls = self.find_ranked(query, top_n=50)
+        return ranked_urls
+
+    def find_ranked(self, query: str, top_n: int = 10) -> List[str]:
+        """
+        Find pages matching a query and return URLs ranked by TF-IDF score.
+
+        Args:
+            query: Search query (one or more words)
+            top_n: Maximum number of results to return
+
+        Returns:
+            List of URLs sorted by descending TF-IDF score
+        """
+        if not query or not query.strip():
+            return []
+
+        key = (query.strip().lower(), top_n)
+        if key in self._cache:
+            postings = self._cache[key]
         else:
-            return self.find_multi_word(words)
+            words = query.strip().lower().split()
+            words = [w for w in words if w]
+
+            # For multi-word queries, require AND semantics: only consider docs that contain all words
+            if len(words) > 1:
+                doc_sets = []
+                for w in words:
+                    if self.inv_index.contains_word(w):
+                        doc_sets.append(set(self.inv_index.get_documents_for_word(w)))
+                    else:
+                        # one word missing -> no results
+                        self._cache[key] = []
+                        return []
+                candidate_docs = set.intersection(*doc_sets) if doc_sets else set()
+            else:
+                # single-word: all documents containing the word are candidates
+                candidate_docs = set(self.inv_index.get_documents_for_word(words[0])) if words else set()
+
+            scores = self._compute_scores(words)
+            # Filter scores to candidate docs only
+            filtered = {doc_id: score for doc_id, score in scores.items() if doc_id in candidate_docs}
+            # Convert to list of tuples and sort
+            postings = sorted(filtered.items(), key=lambda kv: kv[1], reverse=True)
+            # Cache top results (doc_id, score)
+            self._cache[key] = postings[:top_n]
+
+        urls = [self.inv_index.documents.get(doc_id, "UNKNOWN") for doc_id, _ in self._cache[key]]
+        return urls
+
+    def _compute_scores(self, words: List[str]) -> Dict[int, float]:
+        """
+        Compute TF-IDF style scores for documents given query words.
+
+        Returns a mapping doc_id -> score.
+        """
+        scores: Dict[int, float] = {}
+
+        for word in words:
+            word_lower = word.lower()
+            idf = self.inv_index.get_idf(word_lower) or 1.0
+            postings = self.inv_index.get_postings(word_lower)
+            for doc_id, freq, positions in postings:
+                # TF as raw frequency; weight by IDF
+                scores[doc_id] = scores.get(doc_id, 0.0) + (freq * idf)
+
+        return scores
+
+    def clear_cache(self) -> None:
+        """Clear the internal query cache."""
+        self._cache.clear()
     
     def search_with_stats(self, query: str) -> Dict:
         """

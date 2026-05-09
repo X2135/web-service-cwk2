@@ -19,6 +19,15 @@ search-engine-tool/
 │   ├── test_crawler.py ✅ 爬虫测试（11个测试用例）
 │   ├── test_indexer.py ✅ 索引测试（12个测试用例）
 │   └── test_search.py  ✅ 搜索测试（16个测试用例）
+
+# 清除查询缓存（交互式）
+> clear-cache
+
+# 切换排名（启用/禁用 TF-IDF 排序，交互式）
+> toggle-ranking off
+
+# 切换缓存（交互式）
+> toggle-cache off
 ├── data/               📁 索引文件存储位置
 ├── requirements.txt    ✅ 依赖项
 ├── .gitignore          ✅ Git配置

@@ -47,6 +47,9 @@ class SearchToolCLI:
         self.documents_path = documents_path
         self.inv_index: Optional[InvertedIndex] = None
         self.search_engine: Optional[SearchEngine] = None
+        # Runtime options
+        self.ranking_enabled: bool = True
+        self.cache_enabled: bool = True
         
         # Ensure data directory exists
         Path(index_path).parent.mkdir(parents=True, exist_ok=True)
@@ -162,7 +165,12 @@ class SearchToolCLI:
             print("Error: Please provide a search query.")
             return
         
-        results = self.search_engine.find(query)
+        # Choose ranking behavior
+        if self.ranking_enabled:
+            results = self.search_engine.find_ranked(query, top_n=100)
+        else:
+            # Fallback to boolean AND search
+            results = self.search_engine.find(query)
         
         print(f"\n=== Search Results for '{query}' ===")
         print(f"Found {len(results)} page(s):")
@@ -201,6 +209,9 @@ class SearchToolCLI:
         
         self.inv_index = InvertedIndex.from_dict(index_data)
         self.search_engine = SearchEngine(self.inv_index)
+        # Apply cache option
+        if not self.cache_enabled:
+            self.search_engine.clear_cache()
         
         logger.info(f"Index loaded from {self.index_path}")
     
@@ -214,6 +225,9 @@ class SearchToolCLI:
         print("  load           - Load index from file")
         print("  print <word>   - Print index entry for a word")
         print("  find <query>   - Find pages containing search terms")
+        print("  clear-cache     - Clear internal query cache")
+        print("  toggle-ranking on|off - Enable/disable TF-IDF ranking")
+        print("  toggle-cache on|off   - Enable/disable query caching")
         print("  help           - Show this help message")
         print("  exit/quit      - Exit the program")
         print("-" * 80)
@@ -239,6 +253,34 @@ class SearchToolCLI:
                     self.cmd_build(url)
                 elif command == "load":
                     self.cmd_load()
+                elif command == "clear-cache":
+                    if self.search_engine:
+                        self.search_engine.clear_cache()
+                        print("✓ Query cache cleared")
+                    else:
+                        print("Index not loaded")
+                elif command == "toggle-ranking":
+                    opt = args.lower() if args else ""
+                    if opt == "on":
+                        self.ranking_enabled = True
+                        print("Ranking enabled")
+                    elif opt == "off":
+                        self.ranking_enabled = False
+                        print("Ranking disabled")
+                    else:
+                        print("Usage: toggle-ranking on|off")
+                elif command == "toggle-cache":
+                    opt = args.lower() if args else ""
+                    if opt == "on":
+                        self.cache_enabled = True
+                        print("Cache enabled")
+                    elif opt == "off":
+                        self.cache_enabled = False
+                        if self.search_engine:
+                            self.search_engine.clear_cache()
+                        print("Cache disabled")
+                    else:
+                        print("Usage: toggle-cache on|off")
                 elif command == "print":
                     if not args:
                         print("Usage: print <word>")

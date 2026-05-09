@@ -164,7 +164,8 @@ class TestIndexer(unittest.TestCase):
         
         self.assertIn("hello", tokens)
         self.assertIn("world", tokens)
-        self.assertIn("this", tokens)
+        # Stopwords are filtered by default, so 'this' should not be present
+        self.assertNotIn("this", tokens)
         self.assertIn("test", tokens)
     
     def test_tokenize_case_insensitive(self):
