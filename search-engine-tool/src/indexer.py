@@ -55,6 +55,10 @@ class InvertedIndex:
         self.word_stats: Dict[str, Dict] = {}
         # Total number of documents
         self.doc_count: int = 0
+        # doc_id -> document length (number of terms)
+        self.doc_lengths: Dict[int, int] = {}
+        # Average document length (computed after indexing)
+        self.avg_doc_len: float = 0.0
     
     def add_document(self, doc_id: int, url: str, words_with_positions: Dict[str, List[int]]) -> None:
         """
@@ -67,6 +71,9 @@ class InvertedIndex:
         """
         self.documents[doc_id] = url
         self.doc_count = max(self.doc_count, doc_id + 1)
+        # Document length = total term occurrences in document
+        doc_len = sum(len(pos) for pos in words_with_positions.values())
+        self.doc_lengths[doc_id] = doc_len
         
         for word, positions in words_with_positions.items():
             word_lower = word.lower()
@@ -99,6 +106,11 @@ class InvertedIndex:
             # Add 1 to avoid division by zero
             idf = math.log(self.doc_count / (df + 1)) + 1
             stats['idf'] = idf
+        # Calculate average document length
+        if self.doc_lengths:
+            self.avg_doc_len = sum(self.doc_lengths.values()) / len(self.doc_lengths)
+        else:
+            self.avg_doc_len = 0.0
     
     def get_postings(self, word: str) -> List[Tuple[int, int, List[int]]]:
         """
@@ -180,7 +192,9 @@ class InvertedIndex:
                       for word, postings in self.index.items()},
             'documents': self.documents,
             'word_stats': self.word_stats,
-            'doc_count': self.doc_count
+            'doc_count': self.doc_count,
+            'doc_lengths': self.doc_lengths,
+            'avg_doc_len': self.avg_doc_len
         }
     
     @classmethod
@@ -200,6 +214,8 @@ class InvertedIndex:
         inv_index.documents = {int(doc_id): url for doc_id, url in data['documents'].items()}
         inv_index.word_stats = data['word_stats']
         inv_index.doc_count = data.get('doc_count', len(inv_index.documents))
+        inv_index.doc_lengths = {int(k): int(v) for k, v in data.get('doc_lengths', {}).items()}
+        inv_index.avg_doc_len = float(data.get('avg_doc_len', 0.0))
         return inv_index
 
 

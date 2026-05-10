@@ -1,0 +1,2 @@
+docs,avg_terms,vocab,queries,query_terms,top_n,scoring,index_time_s,query_time_ms_avg,query_time_ms_p50
+100,100,500,20,2,10,tfidf,0.013961,0.009496,0.008229

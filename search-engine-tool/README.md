@@ -18,7 +18,10 @@ This tool implements a complete search engine pipeline:
 - ✅ Case-insensitive search
 - ✅ Single and multi-word queries (AND logic)
 - ✅ Index persistence (save/load from JSON)
-- ✅ Comprehensive test suite (70%+ coverage)
+- ✅ Ranked retrieval with TF-IDF and BM25
+- ✅ Query caching and ranking toggle support
+- ✅ Comprehensive test suite + performance regression check
+- ✅ GitHub Actions CI for automated verification
 - ✅ Error handling and logging
 - ✅ Interactive command-line interface
 
@@ -28,16 +31,26 @@ This tool implements a complete search engine pipeline:
 src/
   ├── crawler.py      # Web crawler with politeness window
   ├── indexer.py      # Inverted index and indexing logic
-  ├── search.py       # Search engine and query processing
+  ├── search.py       # Search engine, TF-IDF/BM25 ranking, cache
   └── main.py         # Command-line interface
 
 tests/
   ├── test_crawler.py    # Crawler tests
   ├── test_indexer.py    # Indexer and index tests
-  └── test_search.py     # Search engine tests
+  ├── test_search.py     # Search engine tests
+  ├── test_search_tfidf.py
+  └── test_bm25_ranking.py
 
 data/
   └── index.json      # Generated index file
+
+scripts/
+  ├── benchmark.py    # Synthetic benchmark harness
+  └── perf_check.py   # CI performance regression check
+
+docs/
+  ├── benchmark.md     # Benchmark results and complexity notes
+  └── grading_mapping.md
 
 requirements.txt     # Project dependencies
 README.md           # This file
@@ -136,14 +149,14 @@ python src/main.py find good friends
 ### Run All Tests
 
 ```bash
-cd tests
-python -m pytest
+PYTHONPATH=./src python3 -m unittest discover -v
 ```
 
 or
 
 ```bash
-python -m unittest discover tests
+cd tests
+python -m pytest
 ```
 
 ### Run Specific Test Suite
@@ -168,6 +181,20 @@ pip install coverage
 coverage run -m unittest discover tests
 coverage report
 coverage html  # Generate HTML report
+```
+
+### Performance Check
+
+Run the small CI-style performance regression check:
+
+```bash
+PYTHONPATH=./src python3 scripts/perf_check.py --docs 50 --avg-terms 100 --vocab 500 --queries 20 --query-terms 2 --threshold-ms 5.0
+```
+
+Run the larger benchmark used for comparison:
+
+```bash
+PYTHONPATH=./src python3 scripts/benchmark.py --docs 500 --avg-terms 200 --vocab 2000 --queries 100 --query-terms 2
 ```
 
 ## How It Works
@@ -203,6 +230,8 @@ coverage html  # Generate HTML report
 - **Multi-Word Search**: Set intersection (AND logic)
 - **Case-Insensitive**: Treats "Good", "good", "GOOD" identically
 - **Fuzzy Matching**: Handles typos with edit distance
+- **Ranked Retrieval**: TF-IDF and BM25 scoring
+- **Query Cache**: Reuses recent ranked results
 - **Result Formatting**: Returns URLs with statistics
 
 ### 4. Data Persistence
@@ -265,7 +294,8 @@ Found 8 page(s):
 ### Searching
 - Single word: O(1) lookup
 - Multi-word: O(k * m) where k = words, m = avg. documents per word
-- Results: Typically instant for queries
+- Ranked search: O(k * m) with extra scoring cost; BM25 adds length normalization
+- Results: Typically instant for queries on small/medium corpora
 
 ### Memory
 - Index size: ~10-50 MB (depending on corpus size)
@@ -297,9 +327,9 @@ All errors are logged with context for debugging.
 ## Code Quality
 
 - **PEP 8 Compliance**: Follows Python style guidelines
-- **Documentation**: Comprehensive docstrings for all functions
-- **Type Hints**: Used in all function signatures
-- **Testing**: 70%+ test coverage
+- **Documentation**: Docstrings for core functions and scripts
+- **Type Hints**: Present in the core pipeline and benchmark/perf scripts
+- **Testing**: Unit, integration, and performance regression checks
 - **Logging**: DEBUG/INFO/WARNING/ERROR levels
 
 ## Development Notes
@@ -311,16 +341,18 @@ All errors are logged with context for debugging.
 3. **JSON serialization**: Human-readable, portable format
 4. **BFS crawling**: Ensures breadth-first exploration
 5. **Set intersection**: Efficient multi-word AND queries
+6. **BM25 ranking**: Better long-document normalization than raw TF-IDF
+7. **CI perf gate**: Catch regressions on a small synthetic corpus
 
 ### Future Enhancements
 
-- TF-IDF ranking
 - Phrase queries ("exact match")
 - OR queries
 - Query suggestions/autocomplete
 - Performance optimization (indexing speed)
 - Distributed crawling
 - Caching layer
+- Coverage reporting upload (e.g. Codecov)
 
 ## Dependencies
 
@@ -348,8 +380,7 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
 ### Issue: Tests failing
 **Solution**: Install test dependencies and run from project root
 ```bash
-pip install unittest2
-python -m unittest discover tests
+PYTHONPATH=./src python3 -m unittest discover -v
 ```
 
 ## Notes on GenAI Usage
@@ -359,6 +390,16 @@ This project was developed with guidance from AI tools for:
 - Error handling best practices
 - Documentation generation
 - Test case coverage
+
+### Supporting Documents
+
+- `docs/grading_mapping.md` — grading criteria to implementation mapping
+- `docs/architecture.md` — system architecture and complexity overview
+- `docs/benchmark.md` — benchmark results and analysis
+- `docs/genai_evaluation.md` — critical GenAI evaluation
+- `docs/git_workflow.md` — suggested branch/commit/tag workflow
+
+See `docs/grading_mapping.md` for the rubric-to-implementation mapping and next steps.
 
 The implementation demonstrates understanding of:
 - Web crawling algorithms
@@ -388,5 +429,5 @@ Module: XJCO3011 - Web Services and Web Data
 
 ---
 
-**Last Updated**: 2026-05-09
+**Last Updated**: 2026-05-10
 **Status**: Ready for submission

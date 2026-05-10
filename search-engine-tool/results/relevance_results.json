@@ -1,0 +1,32 @@
+{
+  "queries": [
+    "life",
+    "love",
+    "friendship",
+    "truth",
+    "inspirational",
+    "reading",
+    "happiness",
+    "success",
+    "courage",
+    "knowledge",
+    "dreams",
+    "writing",
+    "books",
+    "humor",
+    "faith",
+    "hope",
+    "music",
+    "poetry",
+    "wisdom",
+    "education"
+  ],
+  "tfidf": {
+    "MAP": 0.8345265529128831,
+    "NDCG@10": 1.0
+  },
+  "bm25": {
+    "MAP": 0.8345265529128831,
+    "NDCG@10": 1.0
+  }
+}

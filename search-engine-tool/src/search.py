@@ -8,6 +8,7 @@ using the inverted index.
 from typing import List, Dict, Set, Tuple
 from indexer import InvertedIndex
 import logging
+import math
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,8 +31,10 @@ class SearchEngine:
             inv_index: InvertedIndex object to search
         """
         self.inv_index = inv_index
+        # Scoring method: 'bm25' or 'tfidf'
+        self.scoring: str = 'bm25'
         # Simple in-memory cache for query -> ranked results
-        self._cache: Dict[Tuple[str, int], List[Tuple[int, float]]] = {}
+        self._cache: Dict[tuple, List[Tuple[int, float]]] = {}
     
     def print_index(self, word: str) -> Dict:
         """
@@ -167,7 +170,7 @@ class SearchEngine:
         if not query or not query.strip():
             return []
 
-        key = (query.strip().lower(), top_n)
+        key = (query.strip().lower(), top_n, self.scoring)
         if key in self._cache:
             postings = self._cache[key]
         else:
@@ -189,7 +192,11 @@ class SearchEngine:
                 # single-word: all documents containing the word are candidates
                 candidate_docs = set(self.inv_index.get_documents_for_word(words[0])) if words else set()
 
-            scores = self._compute_scores(words)
+            # Compute scores according to chosen scoring method
+            if self.scoring == 'bm25':
+                scores = self._bm25_scores(words)
+            else:
+                scores = self._compute_scores(words)
             # Filter scores to candidate docs only
             filtered = {doc_id: score for doc_id, score in scores.items() if doc_id in candidate_docs}
             # Convert to list of tuples and sort
@@ -215,6 +222,35 @@ class SearchEngine:
             for doc_id, freq, positions in postings:
                 # TF as raw frequency; weight by IDF
                 scores[doc_id] = scores.get(doc_id, 0.0) + (freq * idf)
+
+        return scores
+
+    def _bm25_scores(self, words: List[str], k1: float = 1.5, b: float = 0.75) -> Dict[int, float]:
+        """
+        Compute BM25 scores for documents given query words.
+
+        Returns a mapping doc_id -> score.
+        """
+        scores: Dict[int, float] = {}
+        N = max(1, self.inv_index.doc_count)
+        avgdl = getattr(self.inv_index, 'avg_doc_len', 0.0) or 0.0
+
+        for word in words:
+            w = word.lower()
+            postings = self.inv_index.get_postings(w)
+            df = len(postings)
+            # BM25 idf with smoothing
+            idf = 0.0
+            try:
+                idf = math.log((N - df + 0.5) / (df + 0.5) + 1)
+            except Exception:
+                idf = 0.0
+
+            for doc_id, freq, positions in postings:
+                dl = self.inv_index.doc_lengths.get(doc_id, 0)
+                denom = freq + k1 * (1 - b + b * (dl / avgdl)) if avgdl > 0 else freq + k1
+                score = idf * ((freq * (k1 + 1)) / denom) if denom > 0 else 0.0
+                scores[doc_id] = scores.get(doc_id, 0.0) + score
 
         return scores
 

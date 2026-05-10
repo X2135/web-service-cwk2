@@ -1,0 +1,12 @@
+{
+  "docs": 100,
+  "avg_terms": 100,
+  "vocab": 500,
+  "queries": 20,
+  "query_terms": 2,
+  "top_n": 10,
+  "scoring": "tfidf",
+  "index_time_s": 0.013961,
+  "query_time_ms_avg": 0.009496,
+  "query_time_ms_p50": 0.008229
+}
