@@ -14,11 +14,14 @@ This tool implements a complete search engine pipeline:
 ### Features
 
 - ✅ Web crawling with politeness window (6-second minimum delay)
+- ✅ Manual retry loop that respects politeness on every attempt
+- ✅ Default crawl mode: all in-domain pages (with optional listing-only mode in crawler API)
 - ✅ Inverted index with word statistics (frequency, positions)
+- ✅ Shared tokenizer for indexing and querying (punctuation-safe, case-insensitive)
 - ✅ Case-insensitive search
 - ✅ Single and multi-word queries (AND logic)
 - ✅ Index persistence (save/load from JSON)
-- ✅ Ranked retrieval with TF-IDF and BM25
+- ✅ Boolean retrieval (`find`) and ranked retrieval (`find_ranked`) with TF-IDF/BM25
 - ✅ Query caching and ranking toggle support
 - ✅ Comprehensive test suite + performance regression check
 - ✅ GitHub Actions CI for automated verification
@@ -36,7 +39,9 @@ src/
 
 tests/
   ├── test_crawler.py    # Crawler tests
+  ├── test_cli.py        # CLI tests
   ├── test_indexer.py    # Indexer and index tests
+  ├── test_relevance.py  # MAP/NDCG metric tests
   ├── test_search.py     # Search engine tests
   ├── test_search_tfidf.py
   └── test_bm25_ranking.py
@@ -46,6 +51,7 @@ data/
 
 scripts/
   ├── benchmark.py    # Synthetic benchmark harness
+  ├── eval_relevance.py # MAP/NDCG relevance evaluation
   └── perf_check.py   # CI performance regression check
 
 docs/
@@ -126,6 +132,25 @@ Shows:
 
 Returns a list of URLs containing all search terms (AND logic).
 
+**`toggle-ranking on|off`** - Enable/disable ranked retrieval
+```bash
+> toggle-ranking off
+> find good friends   # pure Boolean results
+> toggle-ranking on
+> find good friends   # ranked results (BM25/TF-IDF)
+```
+
+**`toggle-cache on|off`** - Enable/disable ranked-query caching
+```bash
+> toggle-cache off
+> toggle-cache on
+```
+
+**`clear-cache`** - Clear in-memory query cache
+```bash
+> clear-cache
+```
+
 ### Command-Line Mode
 
 Execute single commands from the terminal:
@@ -202,18 +227,21 @@ PYTHONPATH=./src python3 scripts/benchmark.py --docs 500 --avg-terms 200 --vocab
 ### 1. Web Crawler (`crawler.py`)
 
 - **Politeness**: Respects 6-second minimum delay between requests
+- **Manual Retries**: Retries up to `max_retries`, and each retry also respects politeness window
 - **BFS Traversal**: Uses breadth-first search to explore pages
 - **URL Validation**: Only crawls pages on the target domain
 - **Error Handling**: Gracefully handles network errors
-- **Link Extraction**: Finds and follows links within the same domain
+- **Link Extraction**: Finds and follows links within the same domain (deterministic sorted order)
+- **Scope**: Default mode crawls all in-domain pages; optional `crawl_listing_only=True` restricts to quote listing pagination
 
 ### 2. Indexer (`indexer.py`)
 
 - **Text Extraction**: Parses HTML and removes scripts/styles
-- **Tokenization**: Splits text into words
+- **Tokenization**: Shared tokenizer splits text into alphabetic words (`\b[a-z]+\b`)
 - **Position Tracking**: Records word positions within documents
 - **Case Normalization**: Converts all words to lowercase
-- **Statistics**: Tracks document frequency and collection frequency
+- **Stopwords**: Kept by default (`remove_stopwords=False`), optional filtering available
+- **Statistics**: Tracks DF/CF/IDF, document lengths, and average document length
 
 **Inverted Index Structure:**
 ```python
@@ -230,7 +258,8 @@ PYTHONPATH=./src python3 scripts/benchmark.py --docs 500 --avg-terms 200 --vocab
 - **Multi-Word Search**: Set intersection (AND logic)
 - **Case-Insensitive**: Treats "Good", "good", "GOOD" identically
 - **Fuzzy Matching**: Handles typos with edit distance
-- **Ranked Retrieval**: TF-IDF and BM25 scoring
+- **Boolean Retrieval**: `find(query)` returns strict AND matches
+- **Ranked Retrieval**: `find_ranked(query)` scores Boolean-matched docs with TF-IDF/BM25
 - **Query Cache**: Reuses recent ranked results
 - **Result Formatting**: Returns URLs with statistics
 
@@ -283,7 +312,7 @@ Found 8 page(s):
 
 ### Crawling
 - Politeness window: 6 seconds per request
-- Estimated crawl time: ~10 minutes for full site (~100 pages)
+- Estimated crawl time: typically 20–40+ minutes for full in-domain crawl (~200+ pages, network/retry dependent)
 - Network dependent
 
 ### Indexing
@@ -368,8 +397,14 @@ See `requirements.txt` for specific versions.
 
 ### Issue: Crawling is very slow
 **Solution**: This is normal - the 6-second politeness window is intentional
-- Estimated time: ~10 minutes for full crawl
+- Estimated time: usually 20–40+ minutes for full in-domain crawl
 - You can interrupt with Ctrl+C and load the partial index
+
+### Issue: SSL errors (e.g., `SSLEOFError`)
+**Solution**: Usually network/proxy/VPN related
+- Test connectivity first: `curl -I https://quotes.toscrape.com/`
+- Disable unstable proxy/VPN and retry `build`
+- Use backup index from `data/backup/` if a failed build produced an empty index
 
 ### Issue: Import errors
 **Solution**: Ensure PYTHONPATH includes src directory
@@ -429,5 +464,5 @@ Module: XJCO3011 - Web Services and Web Data
 
 ---
 
-**Last Updated**: 2026-05-10
+**Last Updated**: 2026-05-11
 **Status**: Ready for submission
