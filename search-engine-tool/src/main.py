@@ -231,6 +231,7 @@ class SearchToolCLI:
                 user_input = input("\n> ").strip()
                 
                 if not user_input:
+                    print("输入 help 查看命令")
                     continue
                 
                 parts = user_input.split(None, 1)

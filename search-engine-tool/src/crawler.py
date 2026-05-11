@@ -6,6 +6,8 @@ while respecting a politeness window between requests.
 """
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import time
 from typing import List, Dict, Set
@@ -36,7 +38,10 @@ class Crawler:
     
     # Default headers to be respectful
     DEFAULT_HEADERS = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive'
     }
     
     def __init__(self, base_url: str = "https://quotes.toscrape.com", 
@@ -75,7 +80,24 @@ class Crawler:
             Configured requests.Session object
         """
         session = requests.Session()
-        logger.info(f"Session created with {self.max_retries} retry attempts")
+
+        # Apply default headers to session
+        session.headers.update(self.DEFAULT_HEADERS)
+
+        # Configure urllib3 Retry on the HTTPAdapter to handle
+        # transient 5xx responses, connection errors and backoff.
+        retry_strategy = Retry(
+            total=self.max_retries,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=("HEAD", "GET", "OPTIONS")
+        )
+
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+        logger.info(f"Session created with {self.max_retries} retry attempts and HTTPAdapter retry")
         return session
     
     def _respect_politeness_window(self) -> None:

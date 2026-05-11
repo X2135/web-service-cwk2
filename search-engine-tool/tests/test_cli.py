@@ -100,6 +100,7 @@ class TestCLI(unittest.TestCase):
             self.cli.run_interactive()
 
         text = out.getvalue().lower()
+        self.assertIn("输入 help 查看命令".lower(), text)
         self.assertIn("commands:", text)
         self.assertIn("ranking disabled", text)
         self.assertIn("ranking enabled", text)
