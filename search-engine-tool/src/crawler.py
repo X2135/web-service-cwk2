@@ -11,11 +11,7 @@ import time
 from typing import List, Dict, Set
 from urllib.parse import urljoin, urlparse
 import logging
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +40,8 @@ class Crawler:
     }
     
     def __init__(self, base_url: str = "https://quotes.toscrape.com", 
-                 politeness_window: int = 6, max_retries: int = 3, timeout: int = 10):
+                 politeness_window: int = 6, max_retries: int = 3, timeout: int = 10,
+                 crawl_listing_only: bool = False):
         """
         Initialize the crawler.
         
@@ -53,39 +50,31 @@ class Crawler:
             politeness_window: Minimum seconds between requests (default: 6)
             max_retries: Maximum retries for failed requests (default: 3)
             timeout: Request timeout in seconds (default: 10)
+            crawl_listing_only: If True, only crawl quote listing pagination pages
         """
         self.base_url = base_url
         self.politeness_window = politeness_window
         self.visited_urls: Set[str] = set()
         self.pages: Dict[str, str] = {}  # url -> html content
-        self.last_request_time = 0
+        self.last_request_time = 0.0
         self.max_retries = max_retries
         self.timeout = timeout
+        self.crawl_listing_only = crawl_listing_only
         self._session = self._create_session()
         self.failed_urls: Dict[str, str] = {}  # url -> error message
         self.crawl_stats = {'pages_crawled': 0, 'pages_failed': 0, 'bytes_downloaded': 0}
     
     def _create_session(self) -> requests.Session:
         """
-        Create a requests session with automatic retry strategy.
-        
+        Create a requests session without internal retry handling.
+
+        Manual retry logic is implemented in _get_page_content so that the
+        politeness window is respected before every attempt.
+
         Returns:
-            Configured requests.Session object with retry logic
+            Configured requests.Session object
         """
         session = requests.Session()
-        
-        # Configure retry strategy for transient errors
-        retry_strategy = Retry(
-            total=self.max_retries,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS"]
-        )
-        
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-        
         logger.info(f"Session created with {self.max_retries} retry attempts")
         return session
     
@@ -120,38 +109,43 @@ class Crawler:
         Raises:
             requests.RequestException: If all retries are exhausted
         """
-        self._respect_politeness_window()
-        
-        try:
-            response = self._session.get(
-                url, 
-                headers=self.DEFAULT_HEADERS, 
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            self.last_request_time = time.time()
-            
-            # Update statistics
-            self.crawl_stats['bytes_downloaded'] += len(response.content)
-            
-            logger.info(f"✓ Fetched: {url} ({len(response.content)} bytes)")
-            return response.text
-            
-        except requests.Timeout:
-            error_msg = f"Timeout after {self.timeout}s"
-            logger.error(f"✗ {error_msg}: {url}")
-            self.failed_urls[url] = error_msg
-            raise
-        except requests.HTTPError as e:
-            error_msg = f"HTTP {e.response.status_code}"
-            logger.error(f"✗ {error_msg}: {url}")
-            self.failed_urls[url] = error_msg
-            raise
-        except requests.RequestException as e:
-            error_msg = str(e)
-            logger.error(f"✗ Request failed: {url} - {error_msg}")
-            self.failed_urls[url] = error_msg
-            raise
+        last_error_msg = ""
+
+        for attempt in range(1, self.max_retries + 1):
+            self._respect_politeness_window()
+            try:
+                response = self._session.get(
+                    url,
+                    headers=self.DEFAULT_HEADERS,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+
+                # Update statistics
+                self.crawl_stats['bytes_downloaded'] += len(response.content)
+
+                logger.info(f"✓ Fetched: {url} ({len(response.content)} bytes)")
+                return response.text
+
+            except requests.Timeout:
+                last_error_msg = f"Timeout after {self.timeout}s"
+            except requests.HTTPError as e:
+                status = getattr(e.response, 'status_code', 'unknown')
+                last_error_msg = f"HTTP {status}"
+            except requests.RequestException as e:
+                last_error_msg = str(e)
+            except Exception as e:
+                last_error_msg = str(e)
+            finally:
+                # Update timing after every actual request attempt
+                self.last_request_time = time.time()
+
+            if attempt < self.max_retries:
+                logger.warning(f"Retrying {url} (attempt {attempt}/{self.max_retries}): {last_error_msg}")
+            else:
+                logger.error(f"✗ Request failed: {url} - {last_error_msg}")
+                self.failed_urls[url] = last_error_msg
+                raise requests.RequestException(last_error_msg)
     
     def _is_valid_url(self, url: str) -> bool:
         """
@@ -189,6 +183,31 @@ class Crawler:
             logger.debug(f"URL validation error for {url}: {e}")
             return False
     
+    def _is_crawlable_page(self, url: str) -> bool:
+        """
+        Check if URL should be crawled (restrict to quote pages only).
+        
+        By default, restricts crawling to the main quote listing pages
+        and pagination paths, avoiding /login, /tag, /author, etc.
+        
+        Args:
+            url: URL to check
+            
+        Returns:
+            True if URL should be crawled
+        """
+        if not self.crawl_listing_only:
+            return True
+
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+
+        # Restrict to quote listing pagination when explicitly requested
+        if path in ['/', ''] or path.startswith('/page/'):
+            return True
+
+        return False
+    
     def _extract_links(self, html: str, current_url: str) -> List[str]:
         """
         Extract all links from HTML content.
@@ -200,13 +219,16 @@ class Crawler:
         - Links already visited
         - Duplicate links
         - JavaScript and mailto links
+        - Non-crawlable pages only when listing-only mode is enabled
+        
+        Returns links sorted for deterministic crawl order.
         
         Args:
             html: HTML content to parse
             current_url: Current page URL (for resolving relative links)
             
         Returns:
-            List of unique, valid, absolute URLs found in the page
+            List of unique, valid, absolute URLs found on the page
         """
         soup = BeautifulSoup(html, 'html.parser')
         links = set()
@@ -227,11 +249,13 @@ class Crawler:
             # Remove fragments for cleaner URLs
             url = url.split('#')[0]
             
-            # Only add if valid domain and not already visited
-            if self._is_valid_url(url) and url not in self.visited_urls:
+            # Only add if valid domain, not visited, and crawlable
+            if (self._is_valid_url(url) and url not in self.visited_urls 
+                and self._is_crawlable_page(url)):
                 links.add(url)
         
-        return list(links)
+        # Return links sorted for deterministic crawl order
+        return sorted(list(links))
     
     def crawl(self, start_url: str = None, max_pages: int = None) -> Dict[str, str]:
         """

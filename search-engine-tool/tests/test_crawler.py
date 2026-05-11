@@ -57,9 +57,25 @@ class TestCrawler(unittest.TestCase):
         crawler = Crawler(base_url=self.base_url, politeness_window=0)
         links = crawler._extract_links(html, self.base_url)
         
-        # Should resolve relative URLs
+        # Default mode should crawl all in-domain pages
         self.assertIn("https://quotes.toscrape.com/page/2", links)
         self.assertIn("https://quotes.toscrape.com/author/Albert-Einstein", links)
+
+    def test_extract_links_listing_only_mode(self):
+        """Test that listing-only mode restricts crawl scope."""
+        html = """
+        <html>
+            <a href="/page/2">Next</a>
+            <a href="/author/Albert-Einstein">Author</a>
+            <a href="/login">Login</a>
+        </html>
+        """
+        crawler = Crawler(base_url=self.base_url, politeness_window=0, crawl_listing_only=True)
+        links = crawler._extract_links(html, self.base_url)
+
+        self.assertIn("https://quotes.toscrape.com/page/2", links)
+        self.assertNotIn("https://quotes.toscrape.com/author/Albert-Einstein", links)
+        self.assertNotIn("https://quotes.toscrape.com/login", links)
     
     def test_extract_links_removes_duplicates(self):
         """Test that duplicate links are not added."""
@@ -119,11 +135,15 @@ class TestCrawler(unittest.TestCase):
             crawler._get_page_content("https://quotes.toscrape.com/")
     
     def test_respect_politeness_window(self):
-        """Test that politeness window is respected."""
-        # This is hard to test without mocking time
-        # Just ensure the method exists and can be called
+        """Test that politeness window is respected using mocked time."""
         crawler = Crawler(base_url=self.base_url, politeness_window=0)
-        crawler._respect_politeness_window()
+        crawler.politeness_window = 6
+        crawler.last_request_time = 10
+
+        with patch("crawler.time.time", return_value=14), patch("crawler.time.sleep") as mock_sleep:
+            crawler._respect_politeness_window()
+
+        mock_sleep.assert_called_once_with(2)
     
     def test_get_pages(self):
         """Test getting crawled pages."""
@@ -179,8 +199,9 @@ class TestCrawlerIntegration(unittest.TestCase):
         # Crawl should return pages
         pages = crawler.crawl("https://quotes.toscrape.com/")
 
-        # Should have crawled multiple pages
-        self.assertGreater(len(pages), 0)
+        # Should have crawled multiple pages, including author pages by default
+        self.assertEqual(len(pages), 3)
+        self.assertIn("https://quotes.toscrape.com/author/Albert-Einstein", pages)
 
 
 if __name__ == '__main__':

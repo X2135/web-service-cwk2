@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 # Default paths
 DEFAULT_INDEX_PATH = 'data/index.json'
-DEFAULT_DOCUMENTS_PATH = 'data/documents.json'
 
 
 class SearchToolCLI:
@@ -34,22 +33,18 @@ class SearchToolCLI:
     Handles user input and executes search, indexing, and loading operations.
     """
     
-    def __init__(self, index_path: str = DEFAULT_INDEX_PATH, 
-                 documents_path: str = DEFAULT_DOCUMENTS_PATH):
+    def __init__(self, index_path: str = DEFAULT_INDEX_PATH):
         """
         Initialize the CLI.
         
         Args:
             index_path: Path to save/load the index file
-            documents_path: Path to save/load the documents mapping
         """
         self.index_path = index_path
-        self.documents_path = documents_path
         self.inv_index: Optional[InvertedIndex] = None
         self.search_engine: Optional[SearchEngine] = None
         # Runtime options
         self.ranking_enabled: bool = True
-        self.cache_enabled: bool = True
         
         # Ensure data directory exists
         Path(index_path).parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +68,7 @@ class SearchToolCLI:
             
             # Step 2: Index the pages
             logger.info("Building index...")
-            indexer = Indexer()
+            indexer = Indexer()  # Use default: remove_stopwords=False
             self.inv_index = indexer.index_pages(pages)
             self.search_engine = SearchEngine(self.inv_index)
             
@@ -165,11 +160,11 @@ class SearchToolCLI:
             print("Error: Please provide a search query.")
             return
         
-        # Choose ranking behavior
+        # Choose search behavior based on ranking setting
         if self.ranking_enabled:
             results = self.search_engine.find_ranked(query, top_n=100)
         else:
-            # Fallback to boolean AND search
+            # Use pure Boolean AND search without ranking
             results = self.search_engine.find(query)
         
         print(f"\n=== Search Results for '{query}' ===")
@@ -209,9 +204,8 @@ class SearchToolCLI:
         
         self.inv_index = InvertedIndex.from_dict(index_data)
         self.search_engine = SearchEngine(self.inv_index)
-        # Apply cache option
-        if not self.cache_enabled:
-            self.search_engine.clear_cache()
+        # Sync cache_enabled from CLI settings
+        self.search_engine.cache_enabled = True  # Default enabled
         
         logger.info(f"Index loaded from {self.index_path}")
     
@@ -272,11 +266,12 @@ class SearchToolCLI:
                 elif command == "toggle-cache":
                     opt = args.lower() if args else ""
                     if opt == "on":
-                        self.cache_enabled = True
+                        if self.search_engine:
+                            self.search_engine.cache_enabled = True
                         print("Cache enabled")
                     elif opt == "off":
-                        self.cache_enabled = False
                         if self.search_engine:
+                            self.search_engine.cache_enabled = False
                             self.search_engine.clear_cache()
                         print("Cache disabled")
                     else:

@@ -6,12 +6,10 @@ using the inverted index.
 """
 
 from typing import List, Dict, Set, Tuple
-from indexer import InvertedIndex
+from indexer import InvertedIndex, tokenize
 import logging
 import math
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +31,8 @@ class SearchEngine:
         self.inv_index = inv_index
         # Scoring method: 'bm25' or 'tfidf'
         self.scoring: str = 'bm25'
+        # Cache enable flag
+        self.cache_enabled: bool = True
         # Simple in-memory cache for query -> ranked results
         self._cache: Dict[tuple, List[Tuple[int, float]]] = {}
     
@@ -69,7 +69,7 @@ class SearchEngine:
                 'doc_id': doc_id,
                 'url': url,
                 'frequency': frequency,
-                'positions': positions[:10]  # Show first 10 positions
+                'positions': positions  # Return complete positions, not truncated
             })
         
         return result
@@ -131,9 +131,12 @@ class SearchEngine:
     
     def find(self, query: str) -> List[str]:
         """
-        Find pages matching a search query.
+        Find pages matching a search query using pure Boolean retrieval (AND semantics).
         
-        Supports both single and multi-word queries using AND logic.
+        Supports both single and multi-word queries.
+        - Empty query returns []
+        - Single word: returns all pages containing that word
+        - Multiple words: returns only pages containing ALL words (AND)
         
         Args:
             query: Search query (one or more words)
@@ -145,38 +148,44 @@ class SearchEngine:
             logger.warning("Empty query provided")
             return []
         
-        # Tokenize query
-        words = query.strip().lower().split()
-        words = [w for w in words if w]  # Remove empty strings
+        # Use shared tokenizer for consistent tokenization
+        words = tokenize(query, remove_stopwords=False)
         
         if not words:
             return []
-
-        # Use TF-IDF ranking for results
-        ranked_urls = self.find_ranked(query, top_n=50)
-        return ranked_urls
+        
+        if len(words) == 1:
+            return self.find_single_word(words[0])
+        else:
+            return self.find_multi_word(words)
 
     def find_ranked(self, query: str, top_n: int = 10) -> List[str]:
         """
-        Find pages matching a query and return URLs ranked by TF-IDF score.
+        Find pages matching a query and return URLs ranked by score (TF-IDF or BM25).
+        
+        First applies Boolean AND matching to find candidate documents,
+        then ranks candidates by the chosen scoring method.
 
         Args:
             query: Search query (one or more words)
             top_n: Maximum number of results to return
 
         Returns:
-            List of URLs sorted by descending TF-IDF score
+            List of URLs sorted by descending score
         """
         if not query or not query.strip():
             return []
 
+        # Use shared tokenizer
+        words = tokenize(query, remove_stopwords=False)
+        if not words:
+            return []
+        
+        # Check cache only if caching is enabled
         key = (query.strip().lower(), top_n, self.scoring)
-        if key in self._cache:
+        if self.cache_enabled and key in self._cache:
             postings = self._cache[key]
         else:
-            words = query.strip().lower().split()
-            words = [w for w in words if w]
-
             # For multi-word queries, require AND semantics: only consider docs that contain all words
             if len(words) > 1:
                 doc_sets = []
@@ -185,7 +194,8 @@ class SearchEngine:
                         doc_sets.append(set(self.inv_index.get_documents_for_word(w)))
                     else:
                         # one word missing -> no results
-                        self._cache[key] = []
+                        if self.cache_enabled:
+                            self._cache[key] = []
                         return []
                 candidate_docs = set.intersection(*doc_sets) if doc_sets else set()
             else:
@@ -201,10 +211,11 @@ class SearchEngine:
             filtered = {doc_id: score for doc_id, score in scores.items() if doc_id in candidate_docs}
             # Convert to list of tuples and sort
             postings = sorted(filtered.items(), key=lambda kv: kv[1], reverse=True)
-            # Cache top results (doc_id, score)
-            self._cache[key] = postings[:top_n]
+            # Cache top results only if caching is enabled
+            if self.cache_enabled:
+                self._cache[key] = postings[:top_n]
 
-        urls = [self.inv_index.documents.get(doc_id, "UNKNOWN") for doc_id, _ in self._cache[key]]
+        urls = [self.inv_index.documents.get(doc_id, "UNKNOWN") for doc_id, _ in postings[:top_n]]
         return urls
 
     def _compute_scores(self, words: List[str]) -> Dict[int, float]:
@@ -270,8 +281,7 @@ class SearchEngine:
         """
         results = self.find(query)
         
-        words = query.strip().lower().split()
-        words = [w for w in words if w]
+        words = tokenize(query, remove_stopwords=False)
         
         stats = {
             'query': query,
@@ -295,8 +305,8 @@ class SearchEngine:
         Returns:
             List of URLs with fuzzy-matched words
         """
-        words = query.strip().lower().split()
-        words = [w for w in words if w]
+        # Use shared tokenizer
+        words = tokenize(query, remove_stopwords=False)
         
         if not words:
             return []

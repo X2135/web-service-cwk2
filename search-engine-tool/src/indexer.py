@@ -14,8 +14,6 @@ import json
 import logging
 import time
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Common English stopwords to filter out
@@ -29,6 +27,31 @@ STOPWORDS = {
     'could', 'if', 'then', 'do', 'does', 'did', 'i', 'you', 'he', 'she',
     'we', 'they', 'them', 'who', 'which', 'whom', 'am', 'being', 'been',
 }
+
+
+def tokenize(text: str, remove_stopwords: bool = False) -> List[str]:
+    """
+    Tokenize text into words (shared function for consistent tokenization).
+    
+    Converts to lowercase and extracts only alphabetic words using regex.
+    Optionally filters stopwords.
+    
+    Args:
+        text: Text to tokenize
+        remove_stopwords: Whether to filter out common stopwords (default: False)
+        
+    Returns:
+        List of tokenized words
+    """
+    text = text.lower()
+    # Extract words (only alphabetic characters)
+    words = re.findall(r'\b[a-z]+\b', text)
+    
+    # Filter stopwords if enabled
+    if remove_stopwords:
+        words = [w for w in words if w not in STOPWORDS and len(w) > 1]
+    
+    return words
 
 
 class InvertedIndex:
@@ -70,10 +93,11 @@ class InvertedIndex:
             words_with_positions: Dict mapping words to lists of positions they appear at
         """
         self.documents[doc_id] = url
-        self.doc_count = max(self.doc_count, doc_id + 1)
         # Document length = total term occurrences in document
         doc_len = sum(len(pos) for pos in words_with_positions.values())
         self.doc_lengths[doc_id] = doc_len
+        # Update doc_count to reflect the number of successfully indexed documents
+        self.doc_count = len(self.documents)
         
         for word, positions in words_with_positions.items():
             word_lower = word.lower()
@@ -103,8 +127,8 @@ class InvertedIndex:
         
         for word, stats in self.word_stats.items():
             df = stats['df']
-            # Add 1 to avoid division by zero
-            idf = math.log(self.doc_count / (df + 1)) + 1
+            # Smoothed IDF formula: log((N+1)/(df+1)) + 1
+            idf = math.log((self.doc_count + 1) / (df + 1)) + 1
             stats['idf'] = idf
         # Calculate average document length
         if self.doc_lengths:
@@ -213,7 +237,8 @@ class InvertedIndex:
                            for word, postings in data['index'].items()}
         inv_index.documents = {int(doc_id): url for doc_id, url in data['documents'].items()}
         inv_index.word_stats = data['word_stats']
-        inv_index.doc_count = data.get('doc_count', len(inv_index.documents))
+        # doc_count should reflect the actual number of documents
+        inv_index.doc_count = len(inv_index.documents)
         inv_index.doc_lengths = {int(k): int(v) for k, v in data.get('doc_lengths', {}).items()}
         inv_index.avg_doc_len = float(data.get('avg_doc_len', 0.0))
         return inv_index
@@ -235,12 +260,12 @@ class Indexer:
         index_stats: Indexing statistics
     """
     
-    def __init__(self, remove_stopwords: bool = True):
+    def __init__(self, remove_stopwords: bool = False):
         """
         Initialize the indexer.
         
         Args:
-            remove_stopwords: Whether to filter out common stopwords (default: True)
+            remove_stopwords: Whether to filter out common stopwords (default: False)
         """
         self.inv_index = InvertedIndex()
         self.remove_stopwords = remove_stopwords
@@ -285,10 +310,7 @@ class Indexer:
     
     def _tokenize(self, text: str) -> List[str]:
         """
-        Tokenize text into words with optional stopword filtering.
-        
-        Converts to lowercase and extracts only alphabetic words.
-        Filters out stopwords if enabled.
+        Tokenize text using the shared tokenize function.
         
         Args:
             text: Text to tokenize
@@ -296,16 +318,7 @@ class Indexer:
         Returns:
             List of words
         """
-        # Convert to lowercase
-        text = text.lower()
-        # Extract words (only alphabetic characters)
-        words = re.findall(r'\b[a-z]+\b', text)
-        
-        # Filter stopwords if enabled
-        if self.remove_stopwords:
-            words = [w for w in words if w not in STOPWORDS and len(w) > 1]
-        
-        return words
+        return tokenize(text, remove_stopwords=self.remove_stopwords)
     
     def _extract_words_with_positions(self, text: str) -> Dict[str, List[int]]:
         """

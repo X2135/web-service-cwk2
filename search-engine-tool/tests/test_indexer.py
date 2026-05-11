@@ -158,14 +158,14 @@ class TestIndexer(unittest.TestCase):
         self.assertNotIn("alert", text)
     
     def test_tokenize(self):
-        """Test text tokenization."""
+        """Test text tokenization (stopwords kept by default)."""
         text = "Hello, world! This is a test."
         tokens = self.indexer._tokenize(text)
         
         self.assertIn("hello", tokens)
         self.assertIn("world", tokens)
-        # Stopwords are filtered by default, so 'this' should not be present
-        self.assertNotIn("this", tokens)
+        # Stopwords are kept by default (remove_stopwords=False)
+        self.assertIn("this", tokens)
         self.assertIn("test", tokens)
     
     def test_tokenize_case_insensitive(self):
