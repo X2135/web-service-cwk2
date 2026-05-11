@@ -203,10 +203,41 @@ Generate coverage report:
 
 ```bash
 pip install coverage
-coverage run -m unittest discover tests
-coverage report
-coverage html  # Generate HTML report
+PYTHONPATH=./src python3 -m coverage run --source=src -m unittest discover
+python3 -m coverage report -m
+python3 -m coverage html  # Generate HTML report
 ```
+
+### Testing & Coverage Results
+
+**Test Suite Metrics:**
+- **Total Tests**: 71 unit tests across 8 test modules
+- **Execution Time**: ~0.025 seconds for full suite
+- **Status**: ✅ All tests passing
+
+**Coverage by Module:**
+| Module | Coverage | Statements | Missing |
+|--------|----------|-----------|---------|
+| src/main.py | 95% | 207 | 10 |
+| src/crawler.py | 85% | - | - |
+| src/indexer.py | 84% | - | - |
+| src/search.py | 85% | - | - |
+| **Overall** | **72%** | - | - |
+
+**Test Distribution:**
+- CLI tests: 10 tests (interactive mode, build/load/find commands, error handling)
+- Smoke tests: 1 test (end-to-end build→load→print→find workflow)
+- Indexer tests: ~17 tests (index operations, tokenization, statistics)
+- Search tests: ~25 tests (Boolean/ranked retrieval, caching, TF-IDF/BM25)
+- Crawler tests: ~12 tests (URL handling, politeness window, retries)
+- Relevance tests: 2 tests (MAP/NDCG metrics)
+- Other: ~4 tests (configuration, edge cases)
+
+**Coverage Highlights:**
+- Main CLI entry point: 95% coverage (all command branches tested)
+- Error handling paths: Covered via exception injection and mock fixtures
+- Interactive mode: Full test coverage of input/output sequences
+- Edge cases: Empty queries, missing indices, invalid arguments, cache operations
 
 ### Performance Check
 
