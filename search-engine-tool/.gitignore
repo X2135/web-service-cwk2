@@ -53,10 +53,6 @@ venv.bak/
 .pytest_cache/
 htmlcov/
 
-# Data
-data/index.json
-data/documents.json
-
 # Misc
 *.log
 .tmp/
