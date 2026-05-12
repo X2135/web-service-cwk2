@@ -15,6 +15,7 @@ This tool implements a complete search engine pipeline:
 
 - ✅ Web crawling with politeness window (6-second minimum delay)
 - ✅ Manual retry loop that respects politeness on every attempt
+- ✅ Robust retry/backoff: `HTTPAdapter` + `urllib3.Retry` with exponential backoff for transient 5xx/connection errors
 - ✅ Default crawl mode: all in-domain pages (with optional listing-only mode in crawler API)
 - ✅ Inverted index with word statistics (frequency, positions)
 - ✅ Shared tokenizer for indexing and querying (punctuation-safe, case-insensitive)
@@ -97,6 +98,8 @@ python src/main.py
 ```
 
 This opens an interactive shell with the following commands:
+
+Note: Pressing Enter on an empty line will display a short hint: "输入 help 查看命令".
 
 #### Commands
 
@@ -437,6 +440,13 @@ See `requirements.txt` for specific versions.
 - Disable unstable proxy/VPN and retry `build`
 - Use backup index from `data/backup/` if a failed build produced an empty index
 
+If you run a local HTTP/S proxy (for debugging or VPN), it can cause intermittent SSL/502 errors. Try unsetting proxy environment variables for the crawl:
+
+```bash
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+PYTHONPATH=./src python3 src/main.py build
+```
+
 ### Issue: Import errors
 **Solution**: Ensure PYTHONPATH includes src directory
 ```bash
@@ -495,5 +505,5 @@ Module: XJCO3011 - Web Services and Web Data
 
 ---
 
-**Last Updated**: 2026-05-11
+**Last Updated**: 2026-05-12
 **Status**: Ready for submission
